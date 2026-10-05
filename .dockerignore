@@ -1,0 +1,28 @@
+# Wat niet in de build-context hoort.
+#
+# Vooral node_modules: die wordt in de image opnieuw geïnstalleerd vanaf de
+# lockfile. Meesturen zou de context honderden megabytes maken én het risico
+# geven dat een Windows-build native modules voor het verkeerde platform bevat.
+node_modules
+.next
+# Wordt in de image opnieuw gegenereerd; een kopie van een Windows-machine hoort er niet in.
+src/generated
+test-results
+playwright-report
+e2e
+.devdb
+.git
+.env
+.env.*
+!.env.example
+*.log
+.tmp
+coverage
+Dockerfile
+docker-compose.yml
+README.md
+docs
+tests
+
+# Productiegeheimen op de server
+deploy/.env*

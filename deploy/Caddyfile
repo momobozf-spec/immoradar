@@ -1,0 +1,19 @@
+# Caddy haalt en vernieuwt het certificaat zelf. Het domein moet al naar het
+# IP-adres van de server wijzen (A-record) voor je start.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Wie het IP-adres rechtstreeks opvraagt, krijgt niets.
+:80 {
+	respond 404
+}

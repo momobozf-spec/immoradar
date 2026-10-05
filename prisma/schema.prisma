@@ -1,0 +1,1313 @@
+// ImmoRadar — Real Estate Acquisition Intelligence
+//
+// ─── DE VIJF PRINCIPES ───────────────────────────────────────────────────────
+//
+//  1. Het PAND is de hoofdrolspeler, niet de advertentie.
+//     Een advertentie is vluchtig: hij verschijnt, verandert van prijs, wordt
+//     ingetrokken en komt drie maanden later terug onder een nieuw id bij een
+//     ander kantoor. Het pand is er de hele tijd. Alleen door `Property` als
+//     ankerpunt te nemen kan je zeggen "dit huis staat al 210 dagen te koop,
+//     bij twee kantoren, met drie prijsverlagingen" — en dat is precies het
+//     product. Hing de geschiedenis aan de advertentie, dan verloor je haar
+//     bij elke herplaatsing.
+//
+//  2. Iedere waarneming die iets nieuws zegt wordt bewaard (`ListingSnapshot`).
+//     De snapshots zijn de bron van waarheid; alles daarboven (events, scores,
+//     tellers) is afgeleid en herberekenbaar. Zonder die regel is een verkeerd
+//     gedetecteerde prijsdaling niet meer te repareren.
+//
+//  3. De marktlaag is gedeeld, de commerciële laag is van één kantoor.
+//     Source/Property/Listing/Snapshot/Event beschrijven de Belgische markt —
+//     die is voor iedereen dezelfde. Pas bij `Opportunity`, `CrmContact` en
+//     `Alert` komt er een `agencyId` bij. De tenantgrens ligt op één plek.
+//
+//  4. CRM-data verlaat nooit de tenant.
+//     Alles onder "LeadRevive" (contacten, interacties, imports, relaties) is
+//     onvoorwaardelijk van één kantoor. Marktdata mag gedeeld worden omdat ze
+//     publiek is; een klantenbestand is dat nooit. Er bestaat in dit schema
+//     geen pad van `CrmContact` naar een ander `Agency` dan het eigen kantoor.
+//
+//  5. Persoonsgegevens staan bij elkaar.
+//     Aan de marktkant in `SellerIdentity`, aan de CRM-kant in `CrmContact`.
+//     Eén delete per persoon volstaat, en de bewaartermijn is op één plek
+//     afdwingbaar (src/services/retentionService.ts).
+
+// Prisma 7: TypeScript-client zonder Rust-query-engine. De verbinding loopt via
+// @prisma/adapter-pg (src/repositories/prisma.ts); de URL voor de CLI staat in
+// prisma.config.ts. Gevolg: geen platformgebonden binaries in node_modules,
+// een kleiner image, en Windows en Linux bouwen dezelfde client.
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums — markt
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Hoe een bron benaderd wordt. De volgorde is de voorkeursvolgorde uit de
+/// architectuur: officiële API boven publieke feed boven JSON-LD boven HTML.
+enum SourceAccessMethod {
+  OFFICIAL_API
+  PUBLIC_FEED
+  STRUCTURED_DATA
+  PUBLIC_HTML
+  FIXTURE
+  SYNTHETIC
+}
+
+enum SourceHealth {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  FAILING
+  BLOCKED
+  DISABLED
+}
+
+enum CollectorRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
+enum ListingType {
+  SALE
+  RENT
+}
+
+enum PropertyType {
+  HOUSE
+  APARTMENT
+  LAND
+  COMMERCIAL
+  GARAGE
+  OTHER
+}
+
+enum SellerType {
+  PRIVATE
+  PROFESSIONAL
+  UNKNOWN
+}
+
+/// De levensloop van één advertentie.
+///
+/// `MISSING` is de belangrijkste: een advertentie die we deze run niet zagen is
+/// nog niet verdwenen. Bronnen paginëren, haperen en filteren. Pas na meerdere
+/// opeenvolgende runs zonder waarneming wordt het `REMOVED` — zie
+/// COLLECTOR_MISSING_RUNS_BEFORE_REMOVED.
+enum ListingStatus {
+  ACTIVE
+  MISSING
+  REMOVED
+  DUPLICATE
+  REDACTED
+}
+
+/// Marktgebeurtenissen. De drie stale-drempels zijn aparte waarden en geen
+/// parameter op één `STALE`-event: het dashboard filtert erop, de scoring weegt
+/// ze verschillend, en "staat 90 dagen online" is commercieel een ander verhaal
+/// dan "staat 30 dagen online".
+enum ListingEventType {
+  NEW_LISTING
+  FSBO_DETECTED
+  PRICE_DROP
+  PRICE_INCREASE
+  STALE_30
+  STALE_60
+  STALE_90
+  LISTING_REMOVED
+  RELISTED
+  AGENCY_TO_PRIVATE
+  PRIVATE_TO_AGENCY
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums — opportunities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Waar de kans vandaan komt. Bepaalt welke velden gevuld zijn: een
+/// LEADREVIVE-kans heeft geen listing, een MARKET-kans heeft geen verplicht
+/// CRM-contact, en een CROSS-kans heeft allebei.
+enum OpportunityOrigin {
+  /// Extern marktsignaal, geen CRM-relatie gevonden.
+  MARKET
+  /// Uitsluitend uit het eigen CRM afgeleid; geen extern signaal.
+  LEADREVIVE
+  /// Marktsignaal én bestaande CRM-relatie. Dit is het product.
+  CROSS
+}
+
+enum OpportunityType {
+  // ── Marktsignalen ────────────────────────────────────────────────────────
+  NEW_FSBO
+  STALE_FSBO
+  PRIVATE_PRICE_DROP
+  PRIVATE_MULTIPLE_PRICE_DROP
+  PRIVATE_RELIST
+  AGENCY_TO_PRIVATE
+
+  // ── LeadRevive ───────────────────────────────────────────────────────────
+  DORMANT_VALUATION_LEAD
+  FORMER_SELLER_PROSPECT
+  FORMER_CLIENT
+  PREVIOUS_BUYER
+  LOST_MANDATE
+  UNCONTACTED_LEAD
+}
+
+/// De acquisitiepijplijn. Bewust licht: dit vervangt het CRM van het kantoor
+/// niet, het houdt bij hoe ver deze ene kans staat.
+enum OpportunityStatus {
+  NEW
+  ASSIGNED
+  TO_CONTACT
+  CONTACTED
+  INTERESTED
+  VALUATION_BOOKED
+  MANDATE_PROPOSED
+  MANDATE_WON
+  LOST
+  DISMISSED
+  SNOOZED
+}
+
+enum TerritoryKind {
+  POSTAL_CODE
+  MUNICIPALITY
+  PROVINCE
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  AGENCY_ADMIN
+  AGENT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+enum AlertChannel {
+  TELEGRAM
+}
+
+enum AlertRuleKind {
+  REALTIME
+  DIGEST
+}
+
+enum AlertStatus {
+  PENDING
+  SENT
+  FAILED
+  SUPPRESSED_DRY_RUN
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums — CRM / LeadRevive
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ContactType {
+  BUYER
+  SELLER
+  LANDLORD
+  TENANT
+  VALUATION_LEAD
+  PROSPECT
+  FORMER_CLIENT
+  UNKNOWN
+}
+
+enum ContactStatus {
+  ACTIVE
+  DORMANT
+  LOST
+  WON
+  UNKNOWN
+}
+
+enum InteractionKind {
+  CALL
+  EMAIL
+  MEETING
+  VISIT
+  VALUATION
+  MANDATE
+  NOTE
+  OTHER
+}
+
+enum CrmImportStatus {
+  PENDING
+  ANALYZING
+  READY
+  IMPORTING
+  COMPLETED
+  FAILED
+}
+
+/// Wat er met één rij uit het importbestand gebeurde. `SKIPPED_DUPLICATE` en
+/// `UPDATED` zijn apart omdat het verschil ertoe doet: het eerste betekent dat
+/// we niets aanraakten, het tweede dat er CRM-data van het kantoor gewijzigd is.
+enum CrmImportRowStatus {
+  PENDING
+  CREATED
+  UPDATED
+  SKIPPED_DUPLICATE
+  SKIPPED_INVALID
+  FAILED
+}
+
+/// Hoe een contact aan een pand hangt. Dit is het scharnier tussen de CRM-laag
+/// en de marktlaag.
+enum ContactPropertyRole {
+  OWNER
+  FORMER_OWNER
+  BUYER
+  SELLER
+  TENANT
+  VALUATION_SUBJECT
+  INTERESTED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bronnen en collectorruns
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Source {
+  id String @id @default(cuid())
+  /// Stabiele sleutel waarmee de code de collector vindt, bv. "fixture-be".
+  /// Verandert nooit; `name` mag wel wijzigen.
+  key  String @unique
+  name String
+
+  /// De aan/uit-knop in het admin-dashboard. De env-allowlist
+  /// COLLECTOR_ENABLED_SOURCES moet er *daarnaast* ook mee akkoord gaan, zodat
+  /// een bron aanzetten altijd twee bewuste handelingen kost.
+  enabled      Boolean            @default(false)
+  accessMethod SourceAccessMethod
+  baseUrl      String?
+
+  /// Planning en beleefdheid, per bron instelbaar vanuit het dashboard.
+  pollIntervalSeconds Int @default(300)
+  rateLimitPerMinute  Int @default(20)
+  timeoutMs           Int @default(15000)
+  maxRetries          Int @default(3)
+
+  /// Gezondheid. Bijgewerkt door de scheduler, niet met de hand.
+  health              SourceHealth @default(UNKNOWN)
+  consecutiveFailures Int          @default(0)
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  lastError           String?
+  /// Zolang dit in de toekomst ligt slaat de scheduler de bron over. Zo isoleert
+  /// één stukke bron zichzelf in plaats van de hele worker vol te laten lopen.
+  cooldownUntil       DateTime?
+  /// Claim van de scheduler; voorkomt dat twee workers dezelfde bron draaien.
+  lockedUntil         DateTime?
+  lockedBy            String?
+
+  /// Op basis waarvan deze bron geautomatiseerd benaderd mag worden. Verplicht
+  /// ingevuld en zichtbaar in het dashboard: een bron zonder verantwoording
+  /// hoort niet in productie.
+  accessNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listings Listing[]
+  runs     CollectorRun[]
+
+  @@index([enabled, cooldownUntil])
+}
+
+model CollectorRun {
+  id       String @id @default(cuid())
+  sourceId String
+  source   Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  status     CollectorRunStatus @default(RUNNING)
+  attempt    Int                @default(1)
+  startedAt  DateTime           @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+
+  itemsFetched   Int @default(0)
+  itemsNew       Int @default(0)
+  itemsUpdated   Int @default(0)
+  itemsUnchanged Int @default(0)
+  itemsRejected  Int @default(0)
+  /// Wat de run inhoudelijk opleverde — dit is wat het dashboard laat zien.
+  eventsDetected Int @default(0)
+  opportunities  Int @default(0)
+  alertsSent     Int @default(0)
+
+  warnings  String[] @default([])
+  errorKind String?
+  error     String?
+
+  @@index([sourceId, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panden
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Het fysieke vastgoedobject. Eén rij per gebouw, hoe vaak het ook te koop
+/// heeft gestaan en bij hoeveel kantoren.
+model Property {
+  id String @id @default(cuid())
+
+  address     String?
+  streetName  String?
+  houseNumber String?
+  postalCode  String?
+  city        String?
+  province    String?
+  latitude    Float?
+  longitude   Float?
+
+  propertyType PropertyType @default(OTHER)
+  bedrooms     Int?
+  surfaceArea  Int?
+
+  /// Genormaliseerde adressleutel (postcode + straat + huisnummer). Puur een
+  /// index om kandidaten snel op te halen — de echte beslissing valt in
+  /// src/matching/propertyMatcher.ts, die veel meer signalen weegt.
+  matchKey String?
+
+  /// Hoe vaak dit pand al op de markt is geweest. Onderscheidt "staat toevallig
+  /// te koop" van "raakt al jaren niet verkocht", en dat laatste is een van de
+  /// sterkste verkoopargumenten voor een makelaar.
+  listingCycles Int @default(1)
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  listings          Listing[]
+  events            ListingEvent[]
+  opportunities     Opportunity[]
+  contactRelations  ContactPropertyRelationship[]
+
+  @@index([matchKey])
+  @@index([postalCode, propertyType])
+  @@index([city])
+  @@index([lastSeenAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verkopers (marktkant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Een verkoper zoals wij hem uit publieke advertenties kennen. Bewust mager:
+/// alleen wat nodig is om (a) particulier van professioneel te scheiden en
+/// (b) de makelaar contact te laten opnemen.
+///
+/// Let op het verschil met `CrmContact`: dít is een publiek waargenomen
+/// identiteit uit de markt, gedeeld tussen alle tenants. Een `CrmContact` is
+/// een klantrelatie van één kantoor. De brug tussen beide is de CRM-matching,
+/// en die maakt per kantoor een eigen oordeel — er loopt geen relatie in het
+/// schema van hier naar een contact, juist om te voorkomen dat kantoor A langs
+/// een gedeelde verkoper bij het klantenbestand van kantoor B komt.
+model SellerIdentity {
+  id String @id @default(cuid())
+
+  displayName String?
+  /// Telefoon in E.164 (+32…). Genormaliseerd, zodat hetzelfde nummer uit twee
+  /// bronnen tot één verkoper leidt in plaats van tot twee halve leads.
+  phoneE164   String? @unique
+  /// Genormaliseerde naam. Alleen een *kandidaat*signaal voor CRM-matching:
+  /// naamgelijkenis alleen mag nooit een match opleveren (zie crmMatcher).
+  normalizedName String?
+
+  classification SellerType @default(UNKNOWN)
+  confidence     Float      @default(0)
+  reasons        String[]   @default([])
+
+  /// Het sterkste "professioneel"-signaal dat we zonder externe registers
+  /// hebben: hoeveel advertenties tegelijk actief zijn.
+  activeListingCount Int @default(0)
+
+  /// Gevuld zodra we de verkoper aan een herkenbaar kantoor koppelen.
+  agencyIdentityId String?
+  agencyIdentity   AgencyIdentity? @relation(fields: [agencyIdentityId], references: [id], onDelete: SetNull)
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  /// Gezet door de verwijderroutine: persoonsgegevens gewist, rij bewaard zodat
+  /// bestaande listings hun relatie en dus hun geschiedenis niet verliezen.
+  redactedAt DateTime?
+
+  listings Listing[]
+
+  @@index([classification])
+  @@index([agencyIdentityId])
+  @@index([normalizedName])
+  @@index([lastSeenAt])
+}
+
+/// Een professioneel kantoor zoals het zich in advertenties presenteert.
+///
+/// Bewust géén verplichte relatie naar `Agency`: dit is wat wij in de markt
+/// waarnemen, niet wie er klant bij ons is. Een kantoor bestaat hier zodra we
+/// het zien adverteren.
+model AgencyIdentity {
+  id             String  @id @default(cuid())
+  name           String
+  /// Kleine letters, zonder accenten en rechtsvorm. "Immo De Meyer BVBA" en
+  /// "immo de meyer" horen hetzelfde kantoor te zijn.
+  normalizedName String  @unique
+  website        String?
+  phoneE164      String?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  sellers  SellerIdentity[]
+  /// Ingevuld wanneer een klant-agency zichzelf aan deze marktidentiteit
+  /// koppelt, zodat het dashboard "wij" naast "zij" kan zetten.
+  agencies Agency[]
+
+  @@index([lastSeenAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Advertenties
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Listing {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  sourceId        String
+  source          Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  /// Het id dat de bron zelf aan de advertentie geeft. Samen met `sourceId` is
+  /// dit de identiteit van een advertentie binnen één bron.
+  sourceListingId String
+  /// De originele URL — verplicht. Zonder terugweg naar de bron is een
+  /// opportunity niet controleerbaar en dus niet bruikbaar.
+  sourceUrl       String
+
+  listingType  ListingType  @default(SALE)
+  propertyType PropertyType @default(OTHER)
+
+  title       String?
+  description String?
+
+  currentPrice Int?
+  currency     String @default("EUR")
+
+  /// De prijs bij de eerste waarneming. Afgeleid van de snapshots en hier
+  /// bewaard omdat "van 545.000 naar 495.000" in elk alertbericht staat en we
+  /// daar geen historie-query voor willen draaien.
+  initialPrice   Int?
+  priceDropCount Int  @default(0)
+
+  sellerId String?
+  seller   SellerIdentity? @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+
+  /// De classificatie zoals die op déze advertentie gold. Staat naast die op
+  /// `SellerIdentity` omdat een verkoper na een tweede advertentie kan omslaan
+  /// van particulier naar professioneel, terwijl we willen kunnen tonen waarop
+  /// we destijds een opportunity hebben gebaseerd.
+  sellerType            SellerType @default(UNKNOWN)
+  sellerConfidence      Float      @default(0)
+  classificationReasons String[]   @default([])
+
+  status ListingStatus @default(ACTIVE)
+  /// Hoeveel opeenvolgende collectorruns deze advertentie niet zagen. Loopt op
+  /// tot de drempel en zet de status dan pas op REMOVED.
+  missedRuns Int @default(0)
+
+  /// Wijst naar de vorige advertentie van hetzelfde pand, gevuld door de
+  /// relist-detectie. Zo is de keten "ingetrokken → opnieuw aangeboden" te
+  /// volgen ook als bron, id, URL, prijs en tekst allemaal veranderd zijn.
+  previousListingId String?  @unique
+  previousListing   Listing? @relation("ListingRelist", fields: [previousListingId], references: [id], onDelete: SetNull)
+  relistedAs        Listing? @relation("ListingRelist")
+
+  /// Hash over de inhoudelijke velden. Verschilt hij van de vorige waarneming,
+  /// dan is er iets veranderd en verdient het een snapshot.
+  contentHash String
+
+  publishedAt DateTime?
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  removedAt   DateTime?
+
+  /// Op welke stale-drempels (30/60/90 dagen) al een event is uitgestuurd.
+  /// Voorkomt dat elke run opnieuw "staat 61 dagen online" meldt.
+  staleDaysReported Int[] @default([])
+
+  redactedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  snapshots     ListingSnapshot[]
+  events        ListingEvent[]
+  opportunities Opportunity[]
+
+  @@unique([sourceId, sourceListingId])
+  @@index([propertyId, firstSeenAt(sort: Desc)])
+  @@index([status, lastSeenAt])
+  @@index([sellerType, status])
+  @@index([sourceId, status])
+  @@index([status, firstSeenAt])
+}
+
+/// Eén waarneming van een advertentie op één moment.
+///
+/// Alleen weggeschreven als er iets veranderd is (`contentHash` verschilt) of
+/// als het de eerste waarneming is. Elke run een rij zou de tabel honderd keer
+/// zo groot maken zonder één extra feit toe te voegen.
+model ListingSnapshot {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  capturedAt DateTime @default(now())
+
+  price       Int?
+  title       String?
+  description String?
+  sellerName  String?
+  /// Persoonsgegeven. Wordt door de bewaartermijn-routine als eerste gewist,
+  /// vóór de rest van de snapshot verdwijnt.
+  sellerPhone String?
+
+  status      ListingStatus
+  contentHash String
+
+  /// Ruwe bronpayload, uitsluitend om parsingfouten te kunnen nakijken. Wordt
+  /// door de retentieroutine gewist (RETENTION_RAW_PAYLOAD_DAYS).
+  rawData Json?
+
+  @@index([listingId, capturedAt(sort: Desc)])
+  @@index([capturedAt])
+}
+
+/// Een gedetecteerde marktgebeurtenis. Dit is de brug tussen "data" en
+/// "commercieel bruikbaar".
+model ListingEvent {
+  id         String   @id @default(cuid())
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  /// Ook op het pand, want de timeline van een pand loopt over meerdere
+  /// advertenties heen. Zonder deze kolom zou de belangrijkste view van het
+  /// product een join over herplaatsingsketens moeten maken.
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  type ListingEventType
+
+  /// Wanneer het gebeurde volgens de data, en wanneer wíj het zagen. Die twee
+  /// lopen uiteen: een prijsdaling van gisteravond detecteren we vanochtend.
+  occurredAt DateTime @default(now())
+  detectedAt DateTime @default(now())
+
+  oldPrice       Int?
+  newPrice       Int?
+  absoluteDrop   Int?
+  percentageDrop Float?
+
+  /// Leeftijd van de advertentie op het moment van het event.
+  daysOnMarket Int?
+
+  oldSellerType SellerType?
+  newSellerType SellerType?
+
+  detail  String?
+  payload Json?
+
+  /// De rem op dubbele events. De unique-index maakt het fysiek onmogelijk om
+  /// dezelfde prijsdaling twee keer vast te leggen, ook als twee workers
+  /// tegelijk dezelfde advertentie verwerken.
+  dedupeKey String @unique
+
+  opportunities Opportunity[]
+
+  @@index([propertyId, occurredAt(sort: Desc)])
+  @@index([listingId, occurredAt(sort: Desc)])
+  @@index([type, occurredAt(sort: Desc)])
+  @@index([occurredAt(sort: Desc)])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Kantoren, gebruikers, gebieden  (de tenantlaag)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Agency {
+  id             String  @id @default(cuid())
+  name           String
+  slug           String  @unique
+  contactEmail   String?
+  /// Standaardchat voor alerts. Een AlertRule mag een eigen chat opgeven.
+  telegramChatId String?
+  active         Boolean @default(true)
+
+  /// Optionele koppeling aan de eigen marktidentiteit, zodat het dashboard
+  /// "wij" naast "zij" kan zetten.
+  identityId String?
+  identity   AgencyIdentity? @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  territories   Territory[]
+  subscription  Subscription?
+  opportunities Opportunity[]
+  alertRules    AlertRule[]
+  alerts        Alert[]
+
+  crmContacts      CrmContact[]
+  crmInteractions  CrmInteraction[]
+  crmImports       CrmImport[]
+  contactRelations ContactPropertyRelationship[]
+
+  @@index([active])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         UserRole @default(AGENT)
+
+  /// Null voor een PLATFORM_ADMIN; die hoort bij geen enkele tenant. Voor elke
+  /// andere rol verplicht — src/lib/session.ts weigert een agency-gebruiker
+  /// zonder agency.
+  agencyId String?
+  agency   Agency? @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  active      Boolean   @default(true)
+  lastLoginAt DateTime?
+
+  /// Staat in elk sessiecookie. Verhogen maakt álle lopende sessies van deze
+  /// gebruiker ongeldig: bij wachtwoordwijziging, deactivering en "overal
+  /// uitloggen". Zonder dit blijft een ontslagen medewerker ingelogd tot zijn
+  /// cookie vanzelf verloopt.
+  sessionVersion     Int       @default(0)
+  /// Mislukte inlogpogingen sinds de laatste geslaagde. Bij de drempel gaat het
+  /// account tijdelijk op slot (`lockedUntil`); src/services/userService.ts.
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  /// Een door een beheerder uitgegeven tijdelijk wachtwoord moet bij de eerste
+  /// login vervangen worden. Tot dan kan de gebruiker alleen /account openen.
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedOpportunities Opportunity[]           @relation("OpportunityAssignee")
+  assignmentsMade       OpportunityAssignment[] @relation("AssignmentActor")
+  assignmentsReceived   OpportunityAssignment[] @relation("AssignmentTarget")
+  activities            OpportunityActivity[]
+  ownedContacts         CrmContact[]
+  imports               CrmImport[]
+
+  @@index([agencyId, active])
+}
+
+model Territory {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  name String
+  kind TerritoryKind
+
+  /// Voor POSTAL_CODE. Belgische postcodes zijn viercijferig.
+  postalCodes    String[] @default([])
+  /// Voor MUNICIPALITY. Genormaliseerd opgeslagen (kleine letters, geen accenten).
+  municipalities String[] @default([])
+  /// Voor PROVINCE. Sleutels uit src/domain/geo/provinces.ts.
+  provinces      String[] @default([])
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId, active])
+}
+
+model Subscription {
+  id       String @id @default(cuid())
+  agencyId String @unique
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  plan   String             @default("starter")
+  status SubscriptionStatus @default(ACTIVE)
+
+  /// Bovengrens op wat een kantoor per dag krijgt. Beschermt tegen een kantoor
+  /// dat half België als territory instelt en daarna verzuipt in meldingen.
+  maxOpportunitiesPerDay Int @default(50)
+
+  startedAt DateTime  @default(now())
+  endsAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LeadRevive — het klantenbestand van één kantoor
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Eén contact uit het CRM van een kantoor.
+///
+/// ─── WAAROM DIT GEEN KOPIE VAN HET CRM IS ────────────────────────────────────
+///
+/// We nemen alleen over wat nodig is om (a) een dormante relatie te herkennen en
+/// (b) een marktsignaal aan een bestaande klant te koppelen. Geen dossiers, geen
+/// documenten, geen financiële gegevens. Het CRM van het kantoor blijft de bron
+/// van waarheid; `externalId` is de weg terug.
+///
+/// De genormaliseerde velden (`phoneE164`, `emailNormalized`, `nameNormalized`,
+/// `addressMatchKey`) bestaan uitsluitend voor matching. Ze staan naast de
+/// originelen en vervangen ze niet: als het kantoor "Jan Van der Straeten" heeft
+/// ingevoerd, dan is dat wat de makelaar te zien krijgt.
+model CrmContact {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  /// Het id in het bron-CRM. Samen met `agencyId` uniek: opnieuw importeren
+  /// werkt bij, in plaats van te verdubbelen.
+  externalId String?
+
+  firstName String?
+  lastName  String?
+  /// Wat het kantoor zelf als volledige naam voerde; leidend in de UI.
+  displayName String?
+
+  email String?
+  phone String?
+
+  address     String?
+  postalCode  String?
+  city        String?
+  province    String?
+
+  // ── Genormaliseerd, alleen voor matching en deduplicatie ─────────────────
+  emailNormalized String?
+  phoneE164       String?
+  nameNormalized  String?
+  /// postcode:straat:huisnummer — dezelfde vorm als `Property.matchKey`, zodat
+  /// een CRM-adres en een advertentie-adres direct vergelijkbaar zijn.
+  addressMatchKey String?
+
+  contactType ContactType   @default(UNKNOWN)
+  status      ContactStatus @default(UNKNOWN)
+  /// Vrij veld uit het bron-CRM ("aankoop", "schatting", "verhuur"): niet
+  /// genormaliseerd, wel getoond, want de makelaar herkent zijn eigen labels.
+  leadType    String?
+
+  assignedUserId String?
+  assignedUser   User?   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  /// De naam zoals die in het CSV stond, ook als er geen gebruiker bij hoort.
+  /// Zonder dit veld verlies je "was van Thomas" zodra Thomas geen account heeft.
+  assignedAgentName String?
+
+  notes String?
+
+  /// Wanneer het contact in het bron-CRM ontstond — niet wanneer wij het
+  /// importeerden. Het verschil is de kern van LeadRevive: een relatie uit 2018
+  /// is iets anders waard dan een import van vorige week.
+  sourceCreatedAt DateTime?
+  lastContactAt   DateTime?
+
+  /// Afgeleide velden, herberekend door de LeadRevive-motor.
+  relationshipScore Int       @default(0)
+  dormantSince      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Persoonsgegevens gewist, rij bewaard voor de importgeschiedenis.
+  redactedAt DateTime?
+
+  interactions     CrmInteraction[]
+  propertyRelations ContactPropertyRelationship[]
+  opportunities    Opportunity[]
+  importRows       CrmImportRow[]
+
+  @@unique([agencyId, externalId])
+  @@index([agencyId, contactType, status])
+  @@index([agencyId, lastContactAt])
+  @@index([agencyId, phoneE164])
+  @@index([agencyId, emailNormalized])
+  @@index([agencyId, addressMatchKey])
+  @@index([agencyId, nameNormalized])
+  @@index([agencyId, postalCode])
+}
+
+/// Contactmomenten uit het CRM. Voedt "hoe lang is het stil" en de
+/// relatiescore.
+model CrmInteraction {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  contactId String
+  contact   CrmContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  kind       InteractionKind @default(NOTE)
+  occurredAt DateTime
+  summary    String?
+  /// Wie het deed, als naam. Zie `CrmContact.assignedAgentName`.
+  agentName  String?
+
+  externalId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([agencyId, externalId])
+  @@index([contactId, occurredAt(sort: Desc)])
+  @@index([agencyId, occurredAt(sort: Desc)])
+}
+
+/// Eén importpoging. Blijft bestaan na afloop: zonder importgeschiedenis is niet
+/// te verantwoorden waar een contact vandaan komt, en dat is precies wat een
+/// kantoor wil weten als er iets misgaat.
+model CrmImport {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  /// "csv" voor de MVP; later "whise", "omnicasa".
+  adapter  String @default("csv")
+  fileName String?
+  /// Hash over de bestandsinhoud. Twee keer hetzelfde bestand uploaden is
+  /// zichtbaar in plaats van stilzwijgend dubbel werk.
+  fileHash String?
+
+  status CrmImportStatus @default(PENDING)
+
+  /// Welke kolom van het bestand op welk veld werd gelegd. Bewaard omdat een
+  /// verkeerde mapping pas weken later opvalt en dan te herleiden moet zijn.
+  columnMapping Json?
+
+  totalRows     Int @default(0)
+  createdCount  Int @default(0)
+  updatedCount  Int @default(0)
+  duplicateCount Int @default(0)
+  invalidCount  Int @default(0)
+  failedCount   Int @default(0)
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  error      String?
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  rows CrmImportRow[]
+
+  @@index([agencyId, startedAt(sort: Desc)])
+}
+
+/// Eén regel uit het importbestand, met wat ermee gebeurde en waarom.
+///
+/// Dit is wat "nooit stilzwijgend CRM-data overschrijven" concreet maakt: bij
+/// een UPDATE staat hier welke velden wijzigden en wat de vorige waarde was.
+model CrmImportRow {
+  id       String @id @default(cuid())
+  importId String
+  import   CrmImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  rowNumber Int
+  status    CrmImportRowStatus @default(PENDING)
+
+  /// De ruwe kolommen zoals ze in het bestand stonden.
+  raw Json
+
+  contactId String?
+  contact   CrmContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  /// Waarom deze rij deze status kreeg: "duplicaat van bestaand contact op
+  /// telefoonnummer", "geen naam en geen contactgegeven".
+  message String?
+  /// Bij UPDATE: { veld: { from, to } }. De enige manier om achteraf te zien wat
+  /// een import met het klantenbestand gedaan heeft.
+  changes Json?
+
+  /// Wanneer `raw` en `changes` leeggemaakt werden (bewaartermijn of wissen op
+  /// verzoek). Null = de oorspronkelijke kolommen staan er nog.
+  rawClearedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([importId, rowNumber])
+  @@index([importId, status])
+  @@index([contactId])
+}
+
+/// Een bekend verband tussen een contact en een pand.
+///
+/// Dit is het scherpste CRM↔markt-signaal dat bestaat: als het kantoor in 2019
+/// een huis aan Pieter verkocht en dat huis staat nu als particuliere verkoop
+/// online, dan is dat geen gelijkenis maar een feit.
+model ContactPropertyRelationship {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  contactId String
+  contact   CrmContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  /// Null zolang het adres uit het CRM nog niet aan een bekend pand hangt. Het
+  /// adres zelf staat er los bij, zodat de koppeling later alsnog kan ontstaan
+  /// wanneer het pand voor het eerst geadverteerd wordt.
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  address         String?
+  postalCode      String?
+  city            String?
+  addressMatchKey String?
+
+  role ContactPropertyRole @default(OWNER)
+  /// Wanneer het verband ontstond: verkoopdatum, schattingsdatum, aankoopjaar.
+  since DateTime?
+  note  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, contactId, addressMatchKey, role])
+  @@index([agencyId, addressMatchKey])
+  @@index([propertyId])
+  @@index([contactId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Opportunities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Een commerciële kans voor één kantoor. Hier ligt de tenantgrens.
+///
+/// ─── DRIE HERKOMSTEN, ÉÉN TABEL ──────────────────────────────────────────────
+///
+/// Een marktkans (FSBO), een dormante CRM-relatie en de combinatie van beide
+/// staan in dezelfde tabel. Dat is bewust: de makelaar heeft 's ochtends één
+/// lijst nodig, geordend op wat het meest oplevert. Drie tabellen zouden drie
+/// lijsten opleveren, en dan moet hij zelf de rangorde bepalen — precies het
+/// werk dat dit product uit handen hoort te nemen.
+///
+/// De prijs daarvan is dat `listingId`/`propertyId`/`sourceEventId` optioneel
+/// zijn (een LeadRevive-kans heeft geen advertentie) en `crmContactId` ook
+/// (een verse FSBO zonder bekende relatie). Wat wél altijd geldt: `origin`
+/// zegt welke kant gevuld is.
+model Opportunity {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  origin OpportunityOrigin @default(MARKET)
+  type   OpportunityType
+  status OpportunityStatus @default(NEW)
+
+  // ── Marktkant ────────────────────────────────────────────────────────────
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  listingId  String?
+  listing    Listing?  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  /// Het event dat deze kans veroorzaakte.
+  sourceEventId String?
+  sourceEvent   ListingEvent? @relation(fields: [sourceEventId], references: [id], onDelete: Cascade)
+
+  // ── CRM-kant ─────────────────────────────────────────────────────────────
+  crmContactId String?
+  crmContact   CrmContact? @relation(fields: [crmContactId], references: [id], onDelete: SetNull)
+  /// 0–1. Hoe zeker we zijn dát dit dezelfde persoon is. Staat los van de
+  /// score: een zwakke match op een sterke kans hoort zichtbaar zwak te zijn.
+  crmMatchConfidence Float    @default(0)
+  crmMatchReasons    String[] @default([])
+
+  // ── Scores ───────────────────────────────────────────────────────────────
+  /// De gecombineerde score, 0–100. Dit is de sorteersleutel van het product.
+  score             Int @default(0)
+  /// Kracht van het externe marktsignaal, 0–100.
+  intentScore       Int @default(0)
+  /// Waarde van de bestaande relatie, 0–100.
+  relationshipScore Int @default(0)
+
+  /// Welke territory de match maakte. Puur voor uitleg in het dashboard.
+  matchedTerritoryId   String?
+  matchedTerritoryName String?
+
+  /// De rem op duplicaten. Per kantoor uniek; opgebouwd uit herkomst + oorzaak,
+  /// zodat dezelfde gebeurtenis bij herhaalde runs één kans blijft.
+  dedupeKey String
+
+  assignedUserId String?
+  assignedUser   User?   @relation("OpportunityAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime  @default(now())
+  /// Na deze datum is de kans commercieel niet interessant meer en verdwijnt
+  /// hij uit de standaardlijst.
+  expiresAt       DateTime?
+  statusChangedAt DateTime?
+  snoozedUntil    DateTime?
+  contactedAt     DateTime?
+  note            String?
+
+  reasons     OpportunityReason[]
+  signals     OpportunitySignal[]
+  scoreDetail OpportunityScore?
+  assignments OpportunityAssignment[]
+  activities  OpportunityActivity[]
+  alerts      Alert[]
+
+  @@unique([agencyId, dedupeKey])
+  @@index([agencyId, status, score(sort: Desc)])
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@index([agencyId, origin, status])
+  @@index([agencyId, type, status])
+  @@index([agencyId, assignedUserId, status])
+  @@index([crmContactId])
+  @@index([propertyId])
+}
+
+/// Waarom deze kans deze score heeft. Als rijen en niet als JSON-blob, zodat het
+/// dashboard erop kan filteren en de scoring achteraf te verantwoorden is.
+model OpportunityReason {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  /// Stabiele sleutel uit de scoring-config, bv. "private_confidence".
+  code   String
+  label  String
+  points Int
+  /// Uit welke dimensie deze reden komt: intent, relationship, timing,
+  /// territory of confidence. Laat het dashboard de uitleg groeperen zoals de
+  /// score is opgebouwd.
+  dimension String @default("intent")
+  /// Volgorde waarin de redenen getoond worden: zwaarste eerst.
+  rank      Int    @default(0)
+
+  @@index([opportunityId, rank])
+}
+
+/// De ruwe signalen achter een kans, vóór weging.
+///
+/// Apart van `OpportunityReason` omdat dat de *uitleg* is en dit de *invoer*.
+/// Verander je de weging, dan verandert de uitleg mee — maar de signalen die
+/// destijds waargenomen zijn horen te blijven staan, anders is een score van
+/// vorige maand niet meer te reconstrueren.
+model OpportunitySignal {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  /// "market" of "crm".
+  kind  String
+  code  String
+  label String
+  /// 0–1. Hoe sterk dit signaal is, los van hoe zwaar het meeweegt.
+  strength Float @default(0)
+  detail   Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([opportunityId, code])
+  @@index([opportunityId])
+}
+
+/// De volledige scoreopbouw, één rij per kans.
+///
+/// Bestaat zodat "waarom 97?" beantwoordbaar blijft nadat de wegingsconfiguratie
+/// gewijzigd is. De `weightsVersion` zegt volgens welke versie gerekend is.
+model OpportunityScore {
+  id            String      @id @default(cuid())
+  opportunityId String      @unique
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  /// De vijf dimensies, elk genormaliseerd op 0–100.
+  intent       Int @default(0)
+  relationship Int @default(0)
+  timing       Int @default(0)
+  territory    Int @default(0)
+  confidence   Int @default(0)
+
+  /// Het eindresultaat en hoe het tot stand kwam.
+  total          Int    @default(0)
+  weightsVersion String @default("v1")
+  breakdown      Json?
+
+  computedAt DateTime @default(now())
+}
+
+/// Wie deze kans kreeg toegewezen, door wie en wanneer.
+///
+/// Een geschiedenis en niet één kolom: "deze lead is drie keer doorgegeven"
+/// is managementinformatie die je kwijt bent zodra je alleen de huidige
+/// eigenaar bewaart.
+model OpportunityAssignment {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  assignedToId String
+  assignedTo   User   @relation("AssignmentTarget", fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  /// Null wanneer het systeem toewees op basis van de CRM-eigenaar.
+  assignedById String?
+  assignedBy   User?   @relation("AssignmentActor", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  reason     String?
+  assignedAt DateTime  @default(now())
+  /// Gezet zodra de kans naar iemand anders gaat. De rij met `unassignedAt = null`
+  /// is de actuele toewijzing.
+  unassignedAt DateTime?
+
+  @@index([opportunityId, assignedAt(sort: Desc)])
+  @@index([assignedToId, unassignedAt])
+}
+
+/// Wat er met de kans gebeurde: statuswissels, notities, contactmomenten.
+/// Voedt de analytics — zonder deze rijen is "conversie" een gok.
+model OpportunityActivity {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// "status_change", "note", "assigned", "snoozed", "alert_sent".
+  kind String
+
+  fromStatus OpportunityStatus?
+  toStatus   OpportunityStatus?
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  @@index([opportunityId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([kind, createdAt(sort: Desc)])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alerts
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AlertRule {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  name    String
+  kind    AlertRuleKind @default(REALTIME)
+  enabled Boolean       @default(true)
+
+  channel AlertChannel @default(TELEGRAM)
+  /// Overschrijft Agency.telegramChatId voor deze regel.
+  telegramChatId String?
+
+  minScore Int               @default(60)
+  /// Leeg = alle types.
+  types    OpportunityType[] @default([])
+  /// Alleen kansen mét een CRM-match. Dit is de regel waarmee een kantoor
+  /// zegt: stoor mij enkel voor iemand die ik al ken.
+  requireCrmMatch Boolean @default(false)
+
+  /// Voor kind = DIGEST: op welk uur (0–23, Europe/Brussels) de samenvatting
+  /// verstuurd wordt.
+  digestHour Int @default(7)
+
+  /// Buiten deze uren geen realtime meldingen. Een makelaar om 03:12 wakker
+  /// maken voor een lead kost je de klant.
+  quietHoursStart Int?
+  quietHoursEnd   Int?
+
+  lastFiredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alerts Alert[]
+
+  @@index([agencyId, enabled, kind])
+}
+
+model Alert {
+  id       String @id @default(cuid())
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  alertRuleId String
+  alertRule   AlertRule @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
+
+  /// Null voor een digest: die vat meerdere kansen samen en hangt aan geen
+  /// enkele in het bijzonder.
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  channel AlertChannel @default(TELEGRAM)
+  status  AlertStatus  @default(PENDING)
+
+  /// De echte rem op dubbele meldingen. De unique-index maakt een tweede
+  /// bericht voor dezelfde (regel, kans) fysiek onmogelijk — ook als twee
+  /// workers tegelijk dezelfde opportunity oppakken.
+  dedupeKey String @unique
+
+  chatId      String
+  messageText String
+
+  attempts          Int       @default(0)
+  providerMessageId String?
+  error             String?
+  createdAt         DateTime  @default(now())
+  sentAt            DateTime?
+
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@index([opportunityId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Wie deed wat. Bewust apart van ListingEvent: dat gaat over de markt die
+/// verandert, dit over mensen en systemen die handelen.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String
+  agencyId   String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+}

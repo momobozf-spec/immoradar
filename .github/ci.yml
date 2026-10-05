@@ -1,0 +1,98 @@
+# ImmoRadar — continue integratie.
+#
+# Eén job, in de volgorde waarin een fout het goedkoopst te vinden is: eerst
+# typen en regels, dan de unittests, dan een echte database met migraties en
+# seed, dan een productiebuild die als server draait, en tot slot de rooktest
+# en de end-to-endtests in een echte browser tegen die server.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: immoradar
+          POSTGRES_PASSWORD: immoradar
+          POSTGRES_DB: immoradar
+          POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U immoradar -d immoradar"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://immoradar:immoradar@localhost:5432/immoradar?schema=public
+      SESSION_SECRET: ci-session-secret-that-is-long-enough-for-production
+      CRON_SECRET: ci-cron-secret
+      APP_BASE_URL: http://localhost:3000
+      NEXT_TELEMETRY_DISABLED: '1'
+      # De e2e-suite logt een twintigtal keer in vanaf hetzelfde adres.
+      LOGIN_MAX_ATTEMPTS_PER_IP: '200'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Afhankelijkheden (genereert ook de Prisma-client)
+        run: npm ci
+
+      - name: Schema, types, lint, unittests
+        run: npm run verify
+
+      - name: Migraties
+        run: npx prisma migrate deploy
+
+      - name: Demodata
+        run: npm run db:seed
+
+      - name: Productiebuild
+        run: npm run build
+
+      - name: Server starten
+        run: |
+          NODE_ENV=production npm start > server.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl -sf http://localhost:3000/api/ready && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/api/ready
+
+      - name: Rooktest
+        run: npm run smoke
+
+      - name: Playwright-browser
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end
+        run: npm run test:e2e
+
+      - name: Serverlog bij een fout
+        if: failure()
+        run: cat server.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

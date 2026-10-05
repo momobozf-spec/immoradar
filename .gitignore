@@ -1,0 +1,27 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Lokale ontwikkeldatabase (npm run dev:db)
+.devdb/
+
+.env
+.env.*
+!.env.example
+deploy/.env*
+
+*.tsbuildinfo
+coverage/
+.DS_Store
+Thumbs.db
+
+# Ontwikkelrommel
+.tmp/
+*.log
+src/generated/
+
+# Playwright
+test-results/
+playwright-report/

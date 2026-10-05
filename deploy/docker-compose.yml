@@ -1,0 +1,132 @@
+# ImmoRadar — productie op één server (Hetzner Cloud of elke Linux-VM met Docker).
+#
+#   caddy    Neemt poort 80 en 443, haalt zelf een Let's Encrypt-certificaat en
+#            stuurt alles door naar de app. De enige dienst die van buitenaf
+#            bereikbaar is.
+#   app      De Next.js-server. Migreert bij het opstarten.
+#   worker   LeadRevive, bewaartermijnen, meldingen. Migreert nooit.
+#   db       PostgreSQL 17, zonder poort naar buiten.
+#   backup   Elke nacht een pg_dump naar het volume `backups`, 14 dagen bewaard.
+#
+# Starten, vanuit deze map op de server:
+#
+#   docker compose --env-file .env.production up -d --build
+#
+# Draaiboek: deploy/README.md.
+
+name: immoradar
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://immoradar:${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}@db:5432/immoradar?schema=public
+  SESSION_SECRET: ${SESSION_SECRET:?zet SESSION_SECRET (minstens 32 tekens)}
+  APP_BASE_URL: https://${DOMAIN:?zet DOMAIN}
+  # Caddy is de enige proxy voor de app: één hop.
+  TRUSTED_PROXY_HOPS: '1'
+  # Pilot = LeadRevive. Geen marktbronnen, en zeker geen demo- of fixturebron.
+  COLLECTOR_ENABLED_SOURCES: ''
+  # Leeg = geen Telegram-meldingen (pilotovereenkomst: standaard uit).
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  CRON_SECRET: ${CRON_SECRET:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_POOL_MAX: '5'
+  RETENTION_CRM_CONTACT_DAYS: ${RETENTION_CRM_CONTACT_DAYS:-3650}
+  RETENTION_IMPORT_ROWS_DAYS: ${RETENTION_IMPORT_ROWS_DAYS:-90}
+  LEGAL_ENTITY_NAME: ${LEGAL_ENTITY_NAME:-}
+  LEGAL_ENTITY_VAT: ${LEGAL_ENTITY_VAT:-}
+  LEGAL_ENTITY_ADDRESS: ${LEGAL_ENTITY_ADDRESS:-}
+  LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: immoradar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}
+      POSTGRES_DB: immoradar
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U immoradar -d immoradar']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Geen `ports`: de database is alleen binnen dit Docker-netwerk bereikbaar.
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    command: sh -c "npx prisma migrate deploy && npm start"
+    # Geen `ports`: alleen Caddy praat met de app.
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment: *app-env
+    command: ['npm', 'run', 'worker']
+    healthcheck:
+      disable: true
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DOMAIN: ${DOMAIN:?zet DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?zet ACME_EMAIL (voor Let's Encrypt)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+          if pg_dump -h db -U immoradar -d immoradar -Fc -f /backups/immoradar-$$stamp.dump.part; then
+            mv /backups/immoradar-$$stamp.dump.part /backups/immoradar-$$stamp.dump
+            echo "backup ok: immoradar-$$stamp.dump"
+          else
+            rm -f /backups/immoradar-$$stamp.dump.part
+            echo "backup MISLUKT op $$stamp" >&2
+          fi
+          find /backups -name 'immoradar-*.dump' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
+  backups:

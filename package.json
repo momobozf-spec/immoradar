@@ -1,0 +1,71 @@
+{
+  "name": "immoradar-belgium",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ImmoRadar Belgium — Real Estate Acquisition Intelligence. Bouwt de historische levensloop van Belgische panden op en leidt daar verkoopopportuniteiten uit af.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "worker": "tsx src/jobs/worker.ts",
+    "pipeline": "tsx src/jobs/cli.ts",
+    "db:generate": "prisma generate",
+    "db:format": "prisma format",
+    "db:validate": "prisma validate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "dev:db": "tsx scripts/dev-db.ts",
+    "demo": "tsx scripts/demo.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
+    "unlock:user": "tsx scripts/unlock-user.ts",
+    "test:e2e": "playwright test",
+    "verify": "npm run db:validate && npm run typecheck && npm run lint && npm run test",
+    "postinstall": "prisma generate",
+    "agency:purge": "tsx scripts/purge-agency.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "clsx": "^2.1.1",
+    "next": "^16.3.0",
+    "pg": "^8.23.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "dotenv": "^17.4.1",
+    "embedded-postgres": "^17.10.0-beta.17",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.0",
+    "prisma": "^7.10.0",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@17.10.0-beta.17": true
+  }
+}

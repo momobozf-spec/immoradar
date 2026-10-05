@@ -1,0 +1,100 @@
+# ImmoRadar — lokale omgeving.
+#
+# ─── WAT HIER DRAAIT ─────────────────────────────────────────────────────────
+#
+#   db       PostgreSQL 17, de enige infrastructuur die dit product nodig heeft.
+#   app      De Next.js-server (dashboard + cron-routes).
+#   worker   De collectorlus: haalt bronnen op, leidt events en kansen af.
+#
+# App en worker zijn gescheiden omdat ze verschillend falen. Een vastgelopen
+# collector mag het dashboard niet meeslepen, en een herstart van de webserver
+# hoort een lopende run niet af te breken. Ze delen wel dezelfde image en
+# dezelfde database — het is één systeem, geen microservices.
+#
+# Voor alleen de database (en `npm run dev` daarnaast):
+#
+#   docker compose up -d db
+#
+# Voor het geheel:
+#
+#   docker compose --profile full up --build
+
+name: immoradar
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: immoradar
+      POSTGRES_PASSWORD: immoradar
+      POSTGRES_DB: immoradar
+      # UTF-8 afdwingen. Een cluster met een Latin-1-encoding loopt stuk op de
+      # eerste gemeente met een accent (Liège) en op het minteken in een
+      # score-uitleg — en dat merk je pas in productie.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # De app start pas als de database écht vragen beantwoordt. Zonder deze
+      # controle faalt de eerste migratie met een verbindingsfout.
+      test: ['CMD-SHELL', 'pg_isready -U immoradar -d immoradar']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://immoradar:immoradar@db:5432/immoradar?schema=public
+      NODE_ENV: production
+      # Verplicht in productie: zonder dit weigert de app te starten.
+      SESSION_SECRET: ${SESSION_SECRET:?zet SESSION_SECRET in .env (minstens 32 tekens)}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      COLLECTOR_ENABLED_SOURCES: ${COLLECTOR_ENABLED_SOURCES:-fixture-be,demo-be}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LEGAL_ENTITY_NAME: ${LEGAL_ENTITY_NAME:-}
+      LEGAL_ENTITY_VAT: ${LEGAL_ENTITY_VAT:-}
+      LEGAL_ENTITY_ADDRESS: ${LEGAL_ENTITY_ADDRESS:-}
+      LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+    ports:
+      - '3000:3000'
+    command: >
+      sh -c "npx prisma migrate deploy && npm start"
+
+  worker:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://immoradar:immoradar@db:5432/immoradar?schema=public
+      NODE_ENV: production
+      SESSION_SECRET: ${SESSION_SECRET:?zet SESSION_SECRET in .env}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      COLLECTOR_ENABLED_SOURCES: ${COLLECTOR_ENABLED_SOURCES:-fixture-be,demo-be}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # De worker migreert niet: dat doet de app. Twee processen die tegelijk
+    # migreren is de kortste weg naar een halve schemawijziging.
+    command: ['npm', 'run', 'worker']
+    # De healthcheck van de image test de webserver; de worker heeft er geen.
+    healthcheck:
+      disable: true
+
+volumes:
+  db-data:
