@@ -1,0 +1,68 @@
+# Planning voor de gratis Render-opstelling (render.free.yaml), die geen worker
+# heeft. Kopieer dit bestand naar .github/workflows/cron.yml.
+#
+# Nodig in GitHub → repository → Settings → Secrets and variables → Actions:
+#   APP_URL      bv. https://immoradar-test.onrender.com (zonder / op het einde)
+#   CRON_SECRET  de waarde van CRON_SECRET bij immoradar-test in Render
+#
+# GitHub start geplande taken soms enkele minuten later; dat is hier geen probleem.
+
+name: cron
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # elk uur: LeadRevive
+    - cron: '23 2 * * *'  # elke nacht (UTC): onderhoud en bewaartermijnen
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Taak (leadrevive of maintenance)'
+        required: true
+        default: leadrevive
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Taak kiezen
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_JOB: ${{ inputs.job }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "$INPUT_JOB" in
+              leadrevive|maintenance) echo "job=$INPUT_JOB" >> "$GITHUB_OUTPUT" ;;
+              *) echo "Onbekende taak"; exit 1 ;;
+            esac
+          elif [ "$SCHEDULE" = "23 2 * * *" ]; then
+            echo "job=maintenance" >> "$GITHUB_OUTPUT"
+          else
+            echo "job=leadrevive" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: App wakker maken
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          # Een slapende gratis service heeft ongeveer een minuut nodig.
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 20 "$APP_URL/api/ready"; then echo; exit 0; fi
+            sleep 15
+          done
+          echo "App niet bereikbaar"; exit 1
+
+      - name: Taak uitvoeren
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          JOB: ${{ steps.pick.outputs.job }}
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/$JOB"
+          echo

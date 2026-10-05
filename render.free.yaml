@@ -1,0 +1,80 @@
+# ImmoRadar op Render — GRATIS testopstelling. Alleen testdata, geen klantdata.
+#
+# Gebruik: Dashboard → Blueprints → New Blueprint Instance → repository
+# `immoradar` → Blueprint Path: render.free.yaml.
+#
+# Verschil met render.yaml (betaald):
+# - Geen worker (gratis bestaat niet voor workers). LeadRevive en onderhoud
+#   lopen via /api/cron/<taak>, aangeroepen door GitHub Actions
+#   (deploy/github-cron.yml).
+# - Geen Shell. De beheerder wordt bij het opstarten aangemaakt als
+#   BOOTSTRAP_ADMIN_EMAIL is ingevuld; het tijdelijke wachtwoord staat één keer
+#   in de logs. Bestaat het account al, dan gebeurt er niets.
+# - De gratis database vervalt 30 dagen na het aanmaken, heeft 1 GB en geen
+#   back-ups. De webservice slaapt na 15 minuten zonder verkeer; het eerste
+#   verzoek daarna duurt ongeveer een minuut.
+# Draaiboek: docs/DEPLOY-RENDER-FREE.md.
+
+envVarGroups:
+  - name: immoradar-test
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUSTED_PROXY_HOPS
+        value: '1'
+      - key: COLLECTOR_ENABLED_SOURCES
+        value: ''
+      - key: TELEGRAM_BOT_TOKEN
+        value: ''
+      - key: DATABASE_POOL_MAX
+        value: '3'
+      - key: RETENTION_CRM_CONTACT_DAYS
+        value: '3650'
+      - key: RETENTION_IMPORT_ROWS_DAYS
+        value: '90'
+      - key: LEGAL_ENTITY_NAME
+        value: Marhaba Data & AI Agent BV
+      - key: LEGAL_ENTITY_VAT
+        value: BE1003552102
+
+services:
+  - type: web
+    name: immoradar-test
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
+    # Migreren, dan (alleen als BOOTSTRAP_ADMIN_EMAIL gezet is) de beheerder
+    # aanmaken, dan starten. Een mislukte bootstrap houdt de start niet tegen.
+    dockerCommand: >-
+      sh -c 'npx prisma migrate deploy
+      && { [ -z "$BOOTSTRAP_ADMIN_EMAIL" ] || npm run bootstrap:admin || true; }
+      && npm start'
+    healthCheckPath: /api/ready
+    envVars:
+      - fromGroup: immoradar-test
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: APP_BASE_URL
+        sync: false
+      - key: LEGAL_ENTITY_ADDRESS
+        sync: false
+      - key: LEGAL_CONTACT_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: immoradar-test-db
+          property: connectionString
+
+databases:
+  - name: immoradar-test-db
+    region: frankfurt
+    plan: free
+    postgresMajorVersion: '17'
+    databaseName: immoradar
+    user: immoradar
+    ipAllowList: []
