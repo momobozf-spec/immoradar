@@ -46,10 +46,7 @@ services:
     dockerfilePath: ./Dockerfile
     # Migreren, dan (alleen als BOOTSTRAP_ADMIN_EMAIL gezet is) de beheerder
     # aanmaken, dan starten. Een mislukte bootstrap houdt de start niet tegen.
-    dockerCommand: >-
-      sh -c 'npx prisma migrate deploy
-      && { [ -z "$BOOTSTRAP_ADMIN_EMAIL" ] || npm run bootstrap:admin || true; }
-      && npm start'
+    dockerCommand: npm run start:render
     healthCheckPath: /api/ready
     envVars:
       - fromGroup: immoradar-test

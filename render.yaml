@@ -41,7 +41,7 @@ services:
     region: frankfurt
     plan: 0.5c-512mb
     dockerfilePath: ./Dockerfile
-    dockerCommand: sh -c "npx prisma migrate deploy && npm start"
+    dockerCommand: npm run start:render
     healthCheckPath: /api/ready
     envVars:
       - fromGroup: immoradar-prod
