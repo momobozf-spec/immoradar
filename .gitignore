@@ -25,3 +25,7 @@ src/generated/
 # Playwright
 test-results/
 playwright-report/
+
+# Kantoorexports en intake-uitvoer bevatten persoonsgegevens
+exports/
+intake-output/

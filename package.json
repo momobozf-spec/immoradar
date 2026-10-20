@@ -35,6 +35,9 @@
     "verify": "npm run db:validate && npm run typecheck && npm run lint && npm run test",
     "postinstall": "prisma generate",
     "agency:purge": "tsx scripts/purge-agency.ts",
+    "agency:export": "tsx scripts/export-agency.ts",
+    "leadrevive:intake": "tsx scripts/leadrevive-intake.ts",
+    "demo:leadrevive": "tsx scripts/leadrevive-intake.ts demo/leadrevive/voorbeeld-export.csv --postcodes 9000,9030,9031,9040,9041,9050,9051 --now 2026-10-20 --title \"LeadRevive-demo — Immo Voorbeeld (fictief)\" --out demo/leadrevive/output",
     "start:render": "prisma migrate deploy && { [ -z \"$BOOTSTRAP_ADMIN_EMAIL\" ] || tsx scripts/bootstrap-admin.ts || true; } && exec next start"
   },
   "dependencies": {

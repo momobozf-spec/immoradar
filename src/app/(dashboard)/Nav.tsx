@@ -20,13 +20,15 @@ interface NavItem {
   label: string
   /** Alleen zichtbaar voor kantoorbeheerders. */
   manageOnly?: boolean
+  /** Draait op marktdata; verborgen zolang er geen marktbron aan staat. */
+  marketOnly?: boolean
 }
 
 const PRIMARY: readonly NavItem[] = [
   { href: '/', label: 'Vandaag' },
   { href: '/leadrevive', label: 'LeadRevive' },
-  { href: '/market', label: 'Marktradar' },
-  { href: '/properties', label: 'Panden' },
+  { href: '/market', label: 'Marktradar', marketOnly: true },
+  { href: '/properties', label: 'Panden', marketOnly: true },
   { href: '/pipeline', label: 'Opvolging' },
   { href: '/analytics', label: 'Analyse' },
 ]
@@ -49,17 +51,26 @@ export function Nav({
   userName,
   roleLabel,
   canManage,
+  marketEnabled,
   logoutAction,
 }: {
   readonly agencyName: string
   readonly userName: string
   readonly roleLabel: string
   readonly canManage: boolean
+  /**
+   * Staat er een marktbron aan? In een LeadRevive-pilot niet: dan toont de
+   * navigatie geen lege marktschermen die een kantoor als "kapot" zou lezen.
+   */
+  readonly marketEnabled: boolean
   readonly logoutAction: () => Promise<void>
 }) {
   const pathname = usePathname()
 
-  const items = [...PRIMARY, ...SECONDARY.filter((item) => canManage || !item.manageOnly)]
+  const items = [
+    ...PRIMARY.filter((item) => marketEnabled || !item.marketOnly),
+    ...SECONDARY.filter((item) => canManage || !item.manageOnly),
+  ]
 
   return (
     <header className="border-b border-ink-200 bg-white">

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { getEnv } from '@/lib/env'
 import { getSession, ROLE_LABELS } from '@/lib/session'
 
 import { Nav } from './Nav'
@@ -41,6 +42,7 @@ export default async function DashboardLayout({
         userName={session.name ?? session.email}
         roleLabel={ROLE_LABELS[session.role]}
         canManage={session.role !== 'AGENT'}
+        marketEnabled={getEnv().COLLECTOR_ENABLED_SOURCES.length > 0}
         logoutAction={logout}
       />
 

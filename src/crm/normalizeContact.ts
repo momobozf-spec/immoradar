@@ -194,8 +194,17 @@ export function buildNameKey(input: string | null | undefined): string | null {
 }
 
 export function normalizeContact(input: RawContactInput): NormalizedContact {
-  const firstName = clean(input.firstName)
-  const lastName = clean(input.lastName)
+  let firstName = clean(input.firstName)
+  let lastName = clean(input.lastName)
+
+  // Een kolom "Naam" met "Janssens, Pieter" en een lege voornaamkolom: de
+  // komma is de scheiding tussen achternaam en voornaam, zoals veel CRM's
+  // exporteren. Zonder deze stap belandt de voornaam in de achternaam.
+  const lastFirst = !firstName && lastName ? /^([^,]+),\s*([^,]+)$/.exec(lastName) : null
+  if (lastFirst?.[1] && lastFirst[2]) {
+    lastName = lastFirst[1].trim()
+    firstName = lastFirst[2].trim()
+  }
 
   // Volledige naam: wat het kantoor zelf schreef wint; anders samengesteld.
   const displayName =

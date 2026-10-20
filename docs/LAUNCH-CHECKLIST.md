@@ -23,7 +23,7 @@ andere site**. Zonder bron draait de marktradar alleen op demodata; LeadRevive
 
 Tot dit rond is, kun je ImmoRadar verkopen als **LeadRevive**: slapende
 relaties uit het eigen bestand van het kantoor. Dat heeft geen externe bron
-nodig.
+nodig. Alles voor die pilot staat in [pilot/](pilot/README.md).
 
 ## 2. Juridisch — blokkerend
 

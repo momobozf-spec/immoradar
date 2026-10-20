@@ -67,6 +67,13 @@ const OWNERSHIP_ROLES: readonly ContactPropertyRoleValue[] = [
   'VALUATION_SUBJECT',
 ]
 
+/**
+ * Een koper met een adres in het dossier: het kantoor kent het pand dat hij
+ * kocht. Telt mee voor de relatie, maar niet als bewezen eigendom — het adres in
+ * een export kan ook zijn huidige woonadres zijn.
+ */
+const RELATIONSHIP_ROLES: readonly ContactPropertyRoleValue[] = [...OWNERSHIP_ROLES, 'BUYER']
+
 export function assessContact(
   contact: ContactStateForRevive,
   now: Date,
@@ -88,7 +95,7 @@ export function assessContact(
 
   let score = 0
 
-  const knowsProperty = contact.propertyRoles.some((role) => OWNERSHIP_ROLES.includes(role))
+  const knowsProperty = contact.propertyRoles.some((role) => RELATIONSHIP_ROLES.includes(role))
   if (knowsProperty) {
     score += 25
     reasons.push('Jullie dossier koppelt dit contact aan een pand')
@@ -155,6 +162,7 @@ export function assessContact(
     opportunityType: deriveOpportunityType(contact, {
       isDormant,
       neverContacted,
+      knowsProperty,
       relationshipAgeMonths,
       relationshipScore,
       options,
@@ -166,6 +174,7 @@ export function assessContact(
 interface DerivationInput {
   isDormant: boolean
   neverContacted: boolean
+  knowsProperty: boolean
   relationshipAgeMonths: number | null
   relationshipScore: number
   options: ReviveOptions
@@ -178,6 +187,17 @@ interface DerivationInput {
  * kan aan meerdere beschrijvingen voldoen — een oud-klant die ooit een schatting
  * vroeg is allebei — en dan hoort de specifiekste te winnen, want die geeft de
  * makelaar het beste openingszinnetje.
+ *
+ * ─── WAAROM DE RELATIEDREMPEL NIET OVERAL GELDT ──────────────────────────────
+ *
+ * Een schattingsaanvraag, een verloren mandaat, een verkoper die afhaakte of een
+ * koper van vijf jaar of langer geleden: bij die categorieën ís de definitie de
+ * reden om te bellen (zie docs/leadrevive.md). Een CSV-export draagt geen
+ * interactiegeschiedenis, dus hun relatiescore blijft laag — 25 voor een bekend
+ * pand plus hooguit 10 voor de leeftijd. Met de drempel ervoor kwamen ze uit een
+ * import nooit boven, en leverde LeadRevive alleen schattingen en oud-klanten op.
+ * De drempel blijft gelden voor oud-klanten, en de eindscore
+ * (`MIN_OPPORTUNITY_SCORE`) blijft voor iedereen de laatste filter.
  */
 function deriveOpportunityType(
   contact: ContactStateForRevive,
@@ -185,14 +205,26 @@ function deriveOpportunityType(
 ): LeadReviveOpportunityType | null {
   // Een nooit opgevolgde lead is geen "slapende relatie" maar een gat in de
   // opvolging. Die staat vooraan omdat het het goedkoopste werk is dat er ligt.
-  if (input.neverContacted && contact.status !== 'LOST') {
-    return 'UNCONTACTED_LEAD'
+  // Wel met een tijdsanker (zonder aanmaakdatum is niet uit te leggen waarom hij
+  // vandaag opduikt) en niet voor huurders: daar valt niets te verkopen.
+  if (input.neverContacted) {
+    const anchored = input.relationshipAgeMonths !== null && input.relationshipAgeMonths >= 1
+    if (anchored && contact.status !== 'LOST' && contact.contactType !== 'TENANT') {
+      return 'UNCONTACTED_LEAD'
+    }
+    return null
   }
 
   if (!input.isDormant) return null
-  if (input.relationshipScore < input.options.minRelationshipScore) return null
 
-  if (contact.hadMandate && contact.status === 'LOST') return 'LOST_MANDATE'
+  // Verloren mandaat: een mandaatgesprek dat niet doorging, of een verkoper met
+  // een bekend pand die als verloren staat — in een CSV is dat dezelfde feit.
+  if (
+    contact.status === 'LOST' &&
+    (contact.hadMandate || (contact.contactType === 'SELLER' && input.knowsProperty))
+  ) {
+    return 'LOST_MANDATE'
+  }
 
   if (contact.contactType === 'VALUATION_LEAD' && contact.status !== 'WON') {
     return 'DORMANT_VALUATION_LEAD'
@@ -202,19 +234,20 @@ function deriveOpportunityType(
     return 'FORMER_SELLER_PROSPECT'
   }
 
-  if (contact.status === 'WON' || contact.contactType === 'FORMER_CLIENT') {
-    return 'FORMER_CLIENT'
-  }
-
   // Een koper wordt pas een verkoopkans als er genoeg tijd voorbij is. Iemand
   // die vorig jaar kocht gaat dit jaar niet verkopen, en hem bellen zou de
   // relatie eerder schaden dan helpen.
-  if (
-    contact.contactType === 'BUYER' &&
-    input.relationshipAgeMonths !== null &&
-    input.relationshipAgeMonths >= 60
-  ) {
-    return 'PREVIOUS_BUYER'
+  // Ook niet als "oud-klant": dat zou dezelfde koper langs een zijdeur na twee
+  // jaar toch op de lijst zetten.
+  if (contact.contactType === 'BUYER') {
+    return input.relationshipAgeMonths !== null && input.relationshipAgeMonths >= 60
+      ? 'PREVIOUS_BUYER'
+      : null
+  }
+
+  if (contact.status === 'WON' || contact.contactType === 'FORMER_CLIENT') {
+    if (input.relationshipScore < input.options.minRelationshipScore) return null
+    return 'FORMER_CLIENT'
   }
 
   return null

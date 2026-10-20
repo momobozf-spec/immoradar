@@ -131,7 +131,9 @@ export interface ScoringConfig {
 const euro = (value: number): string => `€ ${value.toLocaleString('nl-BE')}`
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
-  version: 'v1',
+  // v2: intentfactor voor eerdere kopers (zonder die factor haalden ze de
+  // drempel nooit, terwijl docs/leadrevive.md ze als categorie belooft).
+  version: 'v2',
   maxScore: 100,
   crossBonusMax: 12,
 
@@ -232,6 +234,17 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
           return null
         }
         return { points: 35, label: 'Wilde eerder verkopen; dat werd geen mandaat' }
+      },
+    },
+    {
+      code: 'previous_buyer_cycle',
+      dimension: 'intent',
+      maxPoints: 25,
+      evaluate(context) {
+        if (context.type !== 'PREVIOUS_BUYER') return null
+        // Belgische eigenaars verhuizen gemiddeld na acht tot tien jaar; na vijf
+        // jaar is een gesprek over de volgende stap zinnig, geen opdringerigheid.
+        return { points: 25, label: 'Kocht via het kantoor, vijf jaar of langer geleden' }
       },
     },
     {

@@ -1,6 +1,7 @@
 import type { CrmContact, CrmImport, Prisma } from '@/generated/prisma/client'
 
 import type { CrmMatchCandidate, MarketSideForCrmMatch } from '@/crm/crmMatcher'
+import { findDuplicate } from '@/crm/dedupe'
 import type { NormalizedContact } from '@/crm/normalizeContact'
 import type { CrmContactFilter } from '@/domain/schemas'
 import { toJsonValue } from '@/lib/json'
@@ -260,28 +261,26 @@ async function findExistingContact(
   agencyId: string,
   contact: NormalizedContact,
 ): Promise<CrmContact | null> {
-  if (contact.externalId) {
-    const byExternal = await prisma.crmContact.findUnique({
-      where: { agencyId_externalId: { agencyId, externalId: contact.externalId } },
-    })
-    if (byExternal) return byExternal
+  // Eén query voor alle sleutels, daarna dezelfde rangorde als in
+  // `findDuplicate` (crm/dedupe.ts) — één regelset, getest, in plaats van een
+  // tweede versie hier die "naam + exact adres" vergat.
+  const keys: Prisma.CrmContactWhereInput[] = []
+  if (contact.externalId) keys.push({ externalId: contact.externalId })
+  if (contact.phoneE164) keys.push({ phoneE164: contact.phoneE164 })
+  if (contact.emailNormalized) keys.push({ emailNormalized: contact.emailNormalized })
+  if (contact.nameNormalized && contact.addressMatchKey) {
+    keys.push({ nameNormalized: contact.nameNormalized, addressMatchKey: contact.addressMatchKey })
   }
+  if (keys.length === 0) return null
 
-  if (contact.phoneE164) {
-    const byPhone = await prisma.crmContact.findFirst({
-      where: { agencyId, phoneE164: contact.phoneE164 },
-    })
-    if (byPhone) return byPhone
-  }
+  const candidates = await prisma.crmContact.findMany({
+    where: { agencyId, OR: keys },
+    orderBy: { createdAt: 'asc' },
+    take: 25,
+  })
 
-  if (contact.emailNormalized) {
-    const byEmail = await prisma.crmContact.findFirst({
-      where: { agencyId, emailNormalized: contact.emailNormalized },
-    })
-    if (byEmail) return byEmail
-  }
-
-  return null
+  const duplicate = findDuplicate(contact, candidates)
+  return candidates.find((candidate) => candidate.id === duplicate.contactId) ?? null
 }
 
 /**

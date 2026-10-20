@@ -1,0 +1,22 @@
+Klantnr;Naam;Voornaam;GSM;E-mail;Adres;Postcode;Gemeente;Type;Status;Aangemaakt;Laatste contact;Makelaar;Opmerking
+1001;JANSSENS;Pieter;0499/00.01.01;;Kouter 12;9000;Gent;Schatting;;14/03/2023;02/05/2023;Sofie;"Wil eerst zelf rondkijken; terugbellen na de zomer"
+1002;Janssens, Pieter;;;pieter.janssens@voorbeeld.test;Kouter 12;9000;GENT;schatting;;14/03/2023;20/06/2023;Sofie;
+1003;De Smet;An;+32 499 00 01 02;an.desmet@voorbeeld.test;Hoogpoort 4;9000;Gent;Verkoper;Verloren;03/09/2021;11/10/2021;Thomas;Koos voor ander kantoor
+1004;Van Damme;Luc;0032499000103;;Brabantdam 77;9000;Gent;oud-klant;Verkocht;22/01/2016;15/04/2016;Thomas;Appartement verkocht in 2016
+1005;Peeters;Els;499000104;els.peeters@voorbeeld.test;Sint-Pietersnieuwstraat 120;9000;Gent;Koper;Gekocht;10/06/2018;30/08/2018;Sofie;Kocht rijwoning via ons
+1006;Maes;Johan;0499 00 01 05;;Kortrijksesteenweg 300;9051;Sint-Denijs-Westrem;Estimation;;05/02/2022;05/02/2022;;
+1007;Claes;Sarah;;sarah.claes@voorbeeld.test;;9030;Mariakerke;lead;;12/11/2024;;;Website-formulier: vraag gratis schatting
+1008;Willems;Tom;0499.00.01.07;;Overpoortstraat 9;9000;Gent;Huurder;;01/09/2023;01/09/2024;Sofie;
+1009;Goossens;Marie;0499000108;marie.goossens@voorbeeld.test;Coupure Links 15;9000;Gent;Schatting;Verloren;18/04/2022;25/05/2022;Thomas;"Vond onze schatting te laag"
+1010;Wouters;Koen;;;;;;Koper;;03/03/2025;;;geen gegevens
+1011;Jacobs;Lies;0499 00 01 10;lies.jacobs@voorbeeld.test;Visserij 50;9000;Gent;oud-klant;Verkocht;30/05/2014;12/09/2014;Thomas;Huis verkocht 2014 — kinderen zijn nu het huis uit
+1012;Mertens;Bart;+32499000111;;Gentbruggestraat 3;9040;Sint-Amandsberg;Schatting;;20/10/2025;01/10/2026;Sofie;Recent nog gesproken
+1013;Dubois;Claire;0499/00.01.12;claire.dubois@voorbeeld.test;Rue de la Station 8;7000;Mons;estimation;;01/02/2023;15/02/2023;;Buiten ons gebied
+1014;Hermans;Wim;0499000113;;Dendermondsesteenweg 410;9040;Sint-Amandsberg;Verkoper;;12/07/2022;30/09/2022;Thomas;Wilde verkopen maar wachtte op nieuwbouw
+1015;Lambert;Nadia;;nadia.lambert@voorbeeld.test;Ottergemsesteenweg 210;9000;Gent;acheteur;;15/03/2017;20/04/2017;Sofie;
+1016;Michiels;Jef;0499 00 01 15;jef.michiels@voorbeeld.test;Drongensesteenweg 55;9031;Drongen;Schatting;;09/09/2024;09/09/2024;Sofie;Geen mandaat — offerte te duur gevonden
+1017;Vermeulen;Ine;0499000116;;;;;Prospect;;01/06/2020;;;Beurscontact 2020
+1018;"Desmet, An";;0499/00.01.02;;Hoogpoort 4;9000;Gent;Verkoper;;03/09/2021;14/03/2024;Thomas;Belde zelf nog eens in 2024
+1019;Pauwels;Dirk;0499 00 01 18;;Antwerpsesteenweg 1100;9041;Oostakker;Koper;Gekocht;20/02/2015;10/05/2015;Thomas;
+1020;Aerts;Sofie;;sofie.aerts@voorbeeld.test;Tolhuislaan 30;9000;Gent;oud-klant;;12/12/2019;15/01/2020;Sofie;"Verhuurt appartement
+via ons"

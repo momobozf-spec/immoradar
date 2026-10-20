@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LeadRevive-demo — Immo Voorbeeld (fictief)</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1d2327;--muted:#5f6b72;--line:#e3e0d8;--accent:#1f5f8b;--accent-soft:#e3eef6;--warn:#8a5a00;--warn-soft:#fbf1dc}
+@media (prefers-color-scheme:dark){:root{--bg:#14181b;--card:#1d2226;--ink:#e8ecee;--muted:#9aa6ad;--line:#2d343a;--accent:#7fb7de;--accent-soft:#1d3342;--warn:#f0c46a;--warn-soft:#3a2f17}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 64px}h1{font-size:26px;margin:0 0 4px}h2{font-size:19px;margin:36px 0 10px}
+.muted{color:var(--muted)}.step{display:inline-block;background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;margin-right:6px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+table.raw{border-collapse:collapse;font:12px/1.4 ui-monospace,Menlo,monospace;white-space:nowrap}table.raw th,table.raw td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}.empty{color:var(--muted);font-style:italic}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}.stat b{display:block;font-size:24px}
+.bars{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px}.bar{display:grid;grid-template-columns:150px 1fr 48px;gap:10px;align-items:center;margin:4px 0}.track{height:8px;background:var(--line);border-radius:99px}.fill{height:8px;background:var(--accent);border-radius:99px}
+.warn{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 14px;margin-top:10px}
+ol.list{list-style:none;padding:0;margin:0;display:grid;gap:10px}.card{display:grid;grid-template-columns:36px 1fr 70px;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.rank{font-weight:700;font-size:18px;color:var(--muted)}.top{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.tag{background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600}
+.why{margin:8px 0;padding-left:18px}.opener{margin:6px 0;font-style:italic}.opener span{font-style:normal;font-size:12px;font-weight:600;color:var(--muted);margin-right:4px}.unknown{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.order{text-align:center;font-weight:700;font-size:20px;color:var(--muted)}.order small{display:block;font-size:10px;font-weight:500}
+.note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--card);border-radius:0 8px 8px 0}
+@media (max-width:640px){.card{grid-template-columns:28px 1fr}.order{grid-column:2;text-align:left}.bar{grid-template-columns:110px 1fr 40px}}
+</style></head><body><main>
+<h1>LeadRevive-demo — Immo Voorbeeld (fictief)</h1>
+<p class="muted">Bestand voorbeeld-export.csv · peildatum 2026-10-20 · berekend met de regels van LeadRevive (ImmoRadar)</p>
+
+<h2><span class="step">1</span>Wat het kantoor aanleverde</h2>
+<p>Een gewone CRM-export: namen in twee volgordes, telefoonnummers in vier notaties, dag-eerst datums, Nederlandse en Franse types, dubbele contacten.</p>
+<div class="scroll"><table class="raw"><thead><tr><th>Klantnr</th><th>Naam</th><th>Voornaam</th><th>GSM</th><th>E-mail</th><th>Adres</th><th>Postcode</th><th>Gemeente</th><th>Type</th><th>Status</th><th>Aangemaakt</th><th>Laatste contact</th><th>Makelaar</th><th>Opmerking</th></tr></thead><tbody><tr><td>1001</td><td>JANSSENS</td><td>Pieter</td><td>0499/00.01.01</td><td><span class="empty">leeg</span></td><td>Kouter 12</td><td>9000</td><td>Gent</td><td>Schatting</td><td><span class="empty">leeg</span></td><td>14/03/2023</td><td>02/05/2023</td><td>Sofie</td><td>Wil eerst zelf rondkijken; terugbellen na de zomer</td></tr><tr><td>1002</td><td>Janssens, Pieter</td><td><span class="empty">leeg</span></td><td><span class="empty">leeg</span></td><td>pieter.janssens@voorbeeld.test</td><td>Kouter 12</td><td>9000</td><td>GENT</td><td>schatting</td><td><span class="empty">leeg</span></td><td>14/03/2023</td><td>20/06/2023</td><td>Sofie</td><td><span class="empty">leeg</span></td></tr><tr><td>1003</td><td>De Smet</td><td>An</td><td>+32 499 00 01 02</td><td>an.desmet@voorbeeld.test</td><td>Hoogpoort 4</td><td>9000</td><td>Gent</td><td>Verkoper</td><td>Verloren</td><td>03/09/2021</td><td>11/10/2021</td><td>Thomas</td><td>Koos voor ander kantoor</td></tr><tr><td>1004</td><td>Van Damme</td><td>Luc</td><td>0032499000103</td><td><span class="empty">leeg</span></td><td>Brabantdam 77</td><td>9000</td><td>Gent</td><td>oud-klant</td><td>Verkocht</td><td>22/01/2016</td><td>15/04/2016</td><td>Thomas</td><td>Appartement verkocht in 2016</td></tr><tr><td>1005</td><td>Peeters</td><td>Els</td><td>499000104</td><td>els.peeters@voorbeeld.test</td><td>Sint-Pietersnieuwstraat 120</td><td>9000</td><td>Gent</td><td>Koper</td><td>Gekocht</td><td>10/06/2018</td><td>30/08/2018</td><td>Sofie</td><td>Kocht rijwoning via ons</td></tr><tr><td>1006</td><td>Maes</td><td>Johan</td><td>0499 00 01 05</td><td><span class="empty">leeg</span></td><td>Kortrijksesteenweg 300</td><td>9051</td><td>Sint-Denijs-Westrem</td><td>Estimation</td><td><span class="empty">leeg</span></td><td>05/02/2022</td><td>05/02/2022</td><td><span class="empty">leeg</span></td><td><span class="empty">leeg</span></td></tr><tr><td>1007</td><td>Claes</td><td>Sarah</td><td><span class="empty">leeg</span></td><td>sarah.claes@voorbeeld.test</td><td><span class="empty">leeg</span></td><td>9030</td><td>Mariakerke</td><td>lead</td><td><span class="empty">leeg</span></td><td>12/11/2024</td><td><span class="empty">leeg</span></td><td><span class="empty">leeg</span></td><td>Website-formulier: vraag gratis schatting</td></tr><tr><td>1008</td><td>Willems</td><td>Tom</td><td>0499.00.01.07</td><td><span class="empty">leeg</span></td><td>Overpoortstraat 9</td><td>9000</td><td>Gent</td><td>Huurder</td><td><span class="empty">leeg</span></td><td>01/09/2023</td><td>01/09/2024</td><td>Sofie</td><td><span class="empty">leeg</span></td></tr></tbody></table></div>
+<p class="muted">Eerste 8 van 20 rijen.</p>
+
+<h2><span class="step">2</span>Opgeschoond en ontdubbeld</h2>
+<div class="stats">
+<div class="stat"><b>20</b>rijen in de export</div>
+<div class="stat"><b>2</b>dubbele rijen samengevoegd</div>
+<div class="stat"><b>0</b>onbruikbaar (geen naam/telefoon/e-mail)</div>
+<div class="stat"><b>18</b>unieke contacten</div>
+</div>
+<div class="bars">
+<div class="bar"><span>Telefoon of e-mail</span><div class="track"><div class="fill" style="width:94%"></div></div><b>94%</b></div>
+<div class="bar"><span>Volledig adres</span><div class="track"><div class="fill" style="width:78%"></div></div><b>78%</b></div>
+<div class="bar"><span>Aanmaakdatum</span><div class="track"><div class="fill" style="width:100%"></div></div><b>100%</b></div>
+<div class="bar"><span>Laatste contact</span><div class="track"><div class="fill" style="width:83%"></div></div><b>83%</b></div>
+<div class="bar"><span>Type herkend</span><div class="track"><div class="fill" style="width:100%"></div></div><b>100%</b></div>
+</div>
+
+
+<h2><span class="step">3</span>Wie eerst bellen — 12 bruikbare kansen</h2>
+<p class="note">Een <b>bruikbare kans</b> is een contact met een concrete reden om te bellen (een van zes categorieën), dat bereikbaar is en in het werkgebied ligt. Het getal rechts is de <b>volgorde</b> op de lijst — geen kans op een verkoop.</p>
+<ol class="list">
+<li class="card">
+  <div class="rank">1</div>
+  <div class="body">
+    <div class="top"><b>Johan Maes</b><span class="tag">Slapende schattingsaanvragen</span><span class="muted">9051 Sint-Denijs-Westrem · +32499000105</span></div>
+    <ul class="why"><li>Vroeg een schatting aan; daar kwam geen mandaat van</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 4 jaar</li><li>56 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U vroeg in [jaar] een schatting van [adres]. De markt is sindsdien veranderd; mag ik u kort vertellen wat dat voor uw woning betekent?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">50<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">2</div>
+  <div class="body">
+    <div class="top"><b>Marie Goossens</b><span class="tag">Slapende schattingsaanvragen</span><span class="muted">9000 Gent · +32499000108</span></div>
+    <ul class="why"><li>Vroeg een schatting aan; daar kwam geen mandaat van</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 4 jaar</li><li>52 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U vroeg in [jaar] een schatting van [adres]. De markt is sindsdien veranderd; mag ik u kort vertellen wat dat voor uw woning betekent?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">50<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">3</div>
+  <div class="body">
+    <div class="top"><b>Pieter Janssens</b><span class="tag">Slapende schattingsaanvragen</span><span class="muted">9000 GENT · +32499000101</span></div>
+    <ul class="why"><li>Vroeg een schatting aan; daar kwam geen mandaat van</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 3 jaar</li><li>40 maanden geen contact meer</li><li>2 rijen in de export samengevoegd tot één contact</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U vroeg in [jaar] een schatting van [adres]. De markt is sindsdien veranderd; mag ik u kort vertellen wat dat voor uw woning betekent?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">50<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">4</div>
+  <div class="body">
+    <div class="top"><b>Jef Michiels</b><span class="tag">Slapende schattingsaanvragen</span><span class="muted">9031 Drongen · +32499000115</span></div>
+    <ul class="why"><li>Vroeg een schatting aan; daar kwam geen mandaat van</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 2 jaar</li><li>25 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U vroeg in [jaar] een schatting van [adres]. De markt is sindsdien veranderd; mag ik u kort vertellen wat dat voor uw woning betekent?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">47<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">5</div>
+  <div class="body">
+    <div class="top"><b>Lies Jacobs</b><span class="tag">Oud-klanten</span><span class="muted">9000 Gent · +32499000110</span></div>
+    <ul class="why"><li>Was klant van het kantoor</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 12 jaar</li><li>145 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U was in [jaar] klant bij ons. Ik bel om te horen hoe het met u en de woning gaat.&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">47<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">6</div>
+  <div class="body">
+    <div class="top"><b>Luc Van Damme</b><span class="tag">Oud-klanten</span><span class="muted">9000 Gent · +32499000103</span></div>
+    <ul class="why"><li>Was klant van het kantoor</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 10 jaar</li><li>126 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U was in [jaar] klant bij ons. Ik bel om te horen hoe het met u en de woning gaat.&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">47<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">7</div>
+  <div class="body">
+    <div class="top"><b>Wim Hermans</b><span class="tag">Verloren verkoopprospects</span><span class="muted">9040 Sint-Amandsberg · +32499000113</span></div>
+    <ul class="why"><li>Wilde eerder verkopen; dat werd geen mandaat</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 4 jaar</li><li>48 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U overwoog in [jaar] te verkopen. Speelt dat nog, of is de situatie veranderd?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">44<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">8</div>
+  <div class="body">
+    <div class="top"><b>Sofie Aerts</b><span class="tag">Oud-klanten</span><span class="muted">9000 Gent · sofie.aerts@voorbeeld.test</span></div>
+    <ul class="why"><li>Was klant van het kantoor</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 6 jaar</li><li>81 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U was in [jaar] klant bij ons. Ik bel om te horen hoe het met u en de woning gaat.&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">43<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">9</div>
+  <div class="body">
+    <div class="top"><b>An Desmet</b><span class="tag">Verloren mandaten</span><span class="muted">9000 Gent · +32499000102</span></div>
+    <ul class="why"><li>Mandaat ging destijds niet door; het pand is bekend</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 5 jaar</li><li>31 maanden geen contact meer</li><li>2 rijen in de export samengevoegd tot één contact</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;We spraken in [jaar] over de verkoop van [adres]. Ik bel niet om iets te verkopen, maar om te horen hoe het nu staat.&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">42<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">10</div>
+  <div class="body">
+    <div class="top"><b>Dirk Pauwels</b><span class="tag">Eerdere kopers</span><span class="muted">9041 Oostakker · +32499000118</span></div>
+    <ul class="why"><li>Kocht via het kantoor, vijf jaar of langer geleden</li><li>Relatie bestaat al 11 jaar</li><li>137 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U kocht [adres] via ons in [jaar]. We maken een update van wat woningen in uw straat nu waard zijn; interesseert u dat?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">42<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">11</div>
+  <div class="body">
+    <div class="top"><b>Els Peeters</b><span class="tag">Eerdere kopers</span><span class="muted">9000 Gent · +32499000104</span></div>
+    <ul class="why"><li>Kocht via het kantoor, vijf jaar of langer geleden</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 8 jaar</li><li>97 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U kocht [adres] via ons in [jaar]. We maken een update van wat woningen in uw straat nu waard zijn; interesseert u dat?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">42<small>volgorde</small></div>
+</li>
+<li class="card">
+  <div class="rank">12</div>
+  <div class="body">
+    <div class="top"><b>Nadia Lambert</b><span class="tag">Eerdere kopers</span><span class="muted">9000 Gent · nadia.lambert@voorbeeld.test</span></div>
+    <ul class="why"><li>Kocht via het kantoor, vijf jaar of langer geleden</li><li>Jullie dossier koppelt dit contact aan een pand</li><li>Relatie bestaat al 9 jaar</li><li>114 maanden geen contact meer</li></ul>
+    <p class="opener"><span>Openingszin</span> &#34;U kocht [adres] via ons in [jaar]. We maken een update van wat woningen in uw straat nu waard zijn; interesseert u dat?&#34;</p>
+    <p class="unknown">Wat we níet weten: of deze persoon nu wil verkopen. Dit is een reden om te bellen, geen voorspelling.</p>
+  </div>
+  <div class="order" title="Volgorde op de lijst, geen verkoopkans">40<small>volgorde</small></div>
+</li>
+</ol>
+
+
+<p class="muted">6 contacten leverden geen reden om te bellen op (recent nog gesproken, huurder, te weinig gegevens, of onder de drempel).</p>
+</main></body></html>

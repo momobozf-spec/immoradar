@@ -85,6 +85,19 @@ describe('kolommen raden', () => {
     expect(phones).toHaveLength(1)
   })
 
+  it('legt "Laatste contact" op de datum en niet op de naam', () => {
+    // Regressie: "contact" is ook een naampatroon; de eerste gedeeltelijke
+    // treffer legde de datum van het laatste contact op `displayName`.
+    const mapping = suggestMapping(['Klantnr', 'Naam', 'Voornaam', 'Aangemaakt', 'Laatste contact'])
+    expect(mapping).toMatchObject({
+      '0': 'externalId',
+      '1': 'lastName',
+      '2': 'firstName',
+      '3': 'sourceCreatedAt',
+      '4': 'lastContactAt',
+    })
+  })
+
   it('markeert onbekende kolommen als negeren', () => {
     const mapping = suggestMapping(['Voornaam', 'Interne kolom XYZ'])
     expect(mapping['1']).toBe('ignore')
@@ -142,6 +155,13 @@ describe('contacten normaliseren', () => {
     expect(contact.addressMatchKey).toBe('9000:lindelaan:17')
     expect(contact.postalCode).toBe('9000')
     expect(contact.province).toBe('oost-vlaanderen')
+  })
+
+  it('splitst "Achternaam, Voornaam" uit een naamkolom zonder voornaam', () => {
+    const contact = normalizeContact({ lastName: 'Janssens, Pieter' })
+    expect(contact.firstName).toBe('Pieter')
+    expect(contact.lastName).toBe('Janssens')
+    expect(contact.displayName).toBe('Pieter Janssens')
   })
 
   it('herkent contacttypes in drie talen', () => {

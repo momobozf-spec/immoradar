@@ -167,17 +167,35 @@ export function suggestMapping(header: readonly string[]): Record<string, CrmImp
       return
     }
 
+    // Elk veld hoogstens één keer voorstellen: twee kolommen die allebei
+    // "naam" heten mogen niet allebei op `lastName` gelegd worden, want dan
+    // overschrijft de tweede stilzwijgend de eerste.
+    //
+    // Een exacte kop wint van een gedeeltelijke, en daarna de langste treffer:
+    // "Laatste contact" bevat ook "contact" (een naamkolom in sommige CRM's),
+    // maar is overduidelijk de datum van het laatste contact. Op de eerste
+    // gedeeltelijke treffer afgaan legde die datum op de naam.
+    let best: { field: CrmImportField; exact: boolean; length: number } | null = null
+
     for (const [field, patterns] of HEADER_PATTERNS) {
-      // Elk veld hoogstens één keer voorstellen: twee kolommen die allebei
-      // "naam" heten mogen niet allebei op `lastName` gelegd worden, want dan
-      // overschrijft de tweede stilzwijgend de eerste.
       if (used.has(field)) continue
 
-      if (patterns.some((pattern) => normalized === pattern || normalized.includes(pattern))) {
-        mapping[String(index)] = field
-        used.add(field)
-        return
+      for (const pattern of patterns) {
+        const exact = normalized === pattern
+        if (!exact && !normalized.includes(pattern)) continue
+
+        const better =
+          best === null ||
+          (exact && !best.exact) ||
+          (exact === best.exact && pattern.length > best.length)
+        if (better) best = { field, exact, length: pattern.length }
       }
+    }
+
+    if (best) {
+      mapping[String(index)] = best.field
+      used.add(best.field)
+      return
     }
 
     mapping[String(index)] = 'ignore'

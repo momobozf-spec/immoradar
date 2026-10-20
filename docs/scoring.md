@@ -140,7 +140,7 @@ De factoren, in volgorde van gewicht:
 | Vroeg ooit een schatting aan | Het sterkste dat een CRM bevat: iemand dacht actief over verkopen na |
 | Kantoor kent dit exacte pand | Geen gelijkenis maar een feit uit de eigen dossiers |
 | Eerdere verkoper | Wilde ooit verkopen; dat werd geen mandaat |
-| Eerdere koper | Belgische eigenaars verhuizen gemiddeld na acht tot tien jaar |
+| Eerdere koper | Belgische eigenaars verhuizen gemiddeld na acht tot tien jaar (eigen intentfactor sinds weging v2; daarvoor haalde een koper uit een CSV de drempel nooit) |
 | Recent contact | Een gesprek van vorige maand opent makkelijker dan een van 2019 |
 | Toenmalige makelaar nog in dienst | Wie de klant destijds sprak, hoeft zich niet voor te stellen |
 

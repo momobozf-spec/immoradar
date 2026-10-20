@@ -1,16 +1,13 @@
 import type { OpportunityType } from '@/generated/prisma/client'
 
 import { expiryDaysFor } from '@/events/opportunityRules'
-import { assessContact } from '@/leadrevive/relationshipEngine'
+import { evaluateRevive } from '@/leadrevive/reviveEvaluation'
 import { addDays } from '@/lib/dates'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logger'
 import * as agencyRepository from '@/repositories/agencyRepository'
 import * as crmRepository from '@/repositories/crmRepository'
 import * as opportunityRepository from '@/repositories/opportunityRepository'
-import type { ScoringContext } from '@/scoring/config'
-import { scoreOpportunity } from '@/scoring/opportunityScore'
-import { bestTerritoryPerAgency } from '@/territories/territoryMatch'
 
 /**
  * LeadRevive: kansen uit het eigen klantenbestand, zonder extern signaal.
@@ -66,25 +63,29 @@ export async function runLeadRevive(agencyId: string, now: Date = new Date()): P
   for (const contact of contacts) {
     result.contactsAssessed += 1
 
-    const assessment = assessContact(
+    const evaluation = evaluateRevive(
       {
         contactType: contact.contactType,
         status: contact.status,
         sourceCreatedAt: contact.sourceCreatedAt,
         lastContactAt: contact.lastContactAt,
         interactionCount: contact._count.interactions,
-        hadValuation:
-          contact.contactType === 'VALUATION_LEAD' ||
-          contact.interactions.some((interaction) => interaction.kind === 'VALUATION'),
-        hadMandate: contact.interactions.some((interaction) => interaction.kind === 'MANDATE'),
+        interactionKinds: contact.interactions.map((interaction) => interaction.kind),
         propertyRoles: contact.propertyRelations.map((relation) => relation.role),
+        postalCode: contact.postalCode,
+        city: contact.city,
+        hasPhone: Boolean(contact.phoneE164),
       },
-      now,
+      territories,
       {
         dormantMonths: env.DORMANT_MONTHS,
         minRelationshipScore: env.MIN_RELATIONSHIP_SCORE,
+        minOpportunityScore: env.MIN_OPPORTUNITY_SCORE,
+        highValueThreshold: env.HIGH_VALUE_THRESHOLD,
       },
+      now,
     )
+    const { assessment, territoryMatch, score } = evaluation
 
     // De beoordeling wordt altijd bewaard, ook als er geen kans uit komt: het
     // dashboard toont "slapend sinds" en de relatiescore ook voor contacten die
@@ -96,56 +97,7 @@ export async function runLeadRevive(agencyId: string, now: Date = new Date()): P
       assessment.dormantSince,
     )
 
-    if (!assessment.opportunityType) continue
-
-    const territoryMatch = bestTerritoryPerAgency(
-      { postalCode: contact.postalCode, city: contact.city, province: null },
-      territories,
-    )[0]
-
-    const context: ScoringContext = {
-      origin: 'LEADREVIVE',
-      type: assessment.opportunityType,
-
-      // Er is geen advertentie: alles aan de marktkant staat leeg. De scoring
-      // gaat daar netjes mee om — `intent` haalt zijn punten uit de
-      // LeadRevive-factoren en `timing` uit de dormantie.
-      sellerType: 'unknown',
-      sellerConfidence: 0,
-      hasPhone: Boolean(contact.phoneE164),
-
-      minutesSinceFirstSeen: null,
-      daysOnMarket: null,
-
-      priceDropCount: 0,
-      totalPriceDropPercent: 0,
-
-      isRelisted: false,
-      listingCycles: 1,
-
-      price: null,
-      highValueThreshold: env.HIGH_VALUE_THRESHOLD,
-
-      hasCrmMatch: true,
-      // Het contact ís het uitgangspunt; er valt niets te koppelen en dus niets
-      // om onzeker over te zijn.
-      crmMatchConfidence: 1,
-      isKnownOwnerOfProperty: contact.propertyRelations.some(
-        (relation) => relation.role === 'OWNER' || relation.role === 'FORMER_OWNER',
-      ),
-      monthsSinceLastContact: assessment.monthsSinceLastContact,
-      relationshipAgeMonths: assessment.relationshipAgeMonths,
-      hadValuation:
-        contact.contactType === 'VALUATION_LEAD' ||
-        contact.interactions.some((interaction) => interaction.kind === 'VALUATION'),
-      wasClient: contact.status === 'WON' || contact.contactType === 'FORMER_CLIENT',
-      neverContacted: assessment.neverContacted,
-
-      territoryMatch: territoryMatch?.precision ?? 'none',
-    }
-
-    const score = scoreOpportunity(context)
-    if (score.score < env.MIN_OPPORTUNITY_SCORE) continue
+    if (!assessment.opportunityType || !score || !evaluation.qualifies) continue
 
     const created = await opportunityRepository.createOpportunity({
       agencyId,
