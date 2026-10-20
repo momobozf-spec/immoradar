@@ -49,3 +49,5 @@ Bestand: `voorbeeld-export.csv` · peildatum 2026-10-20
 | 12 | Nadia Lambert | Eerdere kopers | 40 | Kocht via het kantoor, vijf jaar of langer geleden · Jullie dossier koppelt dit contact aan een pand · Relatie bestaat al 9 jaar · 114 maanden geen contact meer |
 
 > De score is een **volgorde om te bellen**, geen kans op verkoop.
+
+> Vóór elk gesprek: wie je bent en voor welk kantoor, waarom je belt, dat de gegevens uit het eigen klantenbestand komen, en dat de persoon bezwaar kan maken (GBA, ontwerp-aanbeveling 01/2025, bijlage 2). Controleer de Bel-me-niet-meer-lijst.

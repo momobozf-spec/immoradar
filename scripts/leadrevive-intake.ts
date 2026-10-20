@@ -136,6 +136,10 @@ function markdown(report: IntakeReport, args: Args): string {
       )
     })
   lines.push('', '> De score is een **volgorde om te bellen**, geen kans op verkoop.', '')
+  lines.push(
+    '> Vóór elk gesprek: wie je bent en voor welk kantoor, waarom je belt, dat de gegevens uit het eigen klantenbestand komen, en dat de persoon bezwaar kan maken (GBA, ontwerp-aanbeveling 01/2025, bijlage 2). Controleer de Bel-me-niet-meer-lijst.',
+    '',
+  )
   return lines.join('\n')
 }
 
@@ -227,6 +231,7 @@ ${bar('Type herkend', report.coverage.typeRecognised)}
 ${report.warnings.map((warning) => `<div class="warn">${escapeHtml(warning)}</div>`).join('')}
 
 <h2><span class="step">3</span>Wie eerst bellen — ${usable.length} bruikbare kansen</h2>
+<p class="note"><b>Vóór elk gesprek</b> (GBA, ontwerp-aanbeveling 01/2025, bijlage 2): zeg wie je bent en voor welk kantoor je belt, waarom je belt, dat je gegevens uit ons eigen klantenbestand komen, en dat de persoon bezwaar kan maken. Bel niemand die op de Bel-me-niet-meer-lijst staat.</p>
 <p class="note">Een <b>bruikbare kans</b> is een contact met een concrete reden om te bellen (een van zes categorieën), dat bereikbaar is en in het werkgebied ligt. Het getal rechts is de <b>volgorde</b> op de lijst — geen kans op een verkoop.</p>
 <ol class="list">
 ${cards}
